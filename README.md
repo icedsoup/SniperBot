@@ -1,4 +1,4 @@
-# KarutaSniper
+# karutaSnipe
 
 KarutaSniper is a self-bot that watches Karuta card drops in Discord, OCRs them, and automatically claims the best match it finds.
 
