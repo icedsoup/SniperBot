@@ -765,7 +765,6 @@ class Main(discord.Client):
                 wait_secs = max(grab_wait, drop_wait)
                 if wait_secs > 0:
                     console.set_state("WAITING")
-                    tprint(f"Cooldowns active — waiting {C_AMBER}{wait_secs}s{R}  {C_DIM}(Grab: {grab_wait}s  Drop: {drop_wait}s){R}")
                     self.grab_timer = grab_wait
                     self.drop_timer = drop_wait
                     remaining = wait_secs + random.randint(5, 15)

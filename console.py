@@ -10,32 +10,25 @@ from colorama import Fore, Style
 R    = Style.RESET_ALL
 C_TEAL   = Fore.LIGHTCYAN_EX
 C_PURPLE = Fore.LIGHTMAGENTA_EX
-C_AMBER  = Fore.YELLOW
+C_AMBER  = Fore.LIGHTWHITE_EX
 C_MINT   = Fore.LIGHTGREEN_EX
 C_CORAL  = Fore.LIGHTRED_EX
 C_GRAY   = Fore.LIGHTBLACK_EX
-C_WHITE  = Fore.LIGHTWHITE_EX
-C_GOLD   = Fore.LIGHTYELLOW_EX
-C_BLUE   = Fore.LIGHTBLUE_EX
+C_WHITE  = Fore.WHITE
+C_GOLD   = Fore.LIGHTWHITE_EX
+C_BLUE   = Fore.LIGHTWHITE_EX
 C_ROSE   = Fore.RED
 C_DIM    = Fore.LIGHTBLACK_EX
 
-# ascii art
+# ascii
 _KARUTA = [
-    r"  ██╗  ██╗  █████╗  ██████╗  ██╗   ██╗ ████████╗  █████╗  ",
-    r"  ██║ ██╔╝ ██╔══██╗ ██╔══██╗ ██║   ██║ ╚══██╔══╝ ██╔══██╗ ",
-    r"  █████╔╝  ███████║ ██████╔╝ ██║   ██║    ██║    ███████║  ",
-    r"  ██╔═██╗  ██╔══██║ ██╔══██╗ ██║   ██║    ██║    ██╔══██║  ",
-    r"  ██║  ██╗ ██║  ██║ ██║  ██║ ╚██████╔╝    ██║    ██║  ██║  ",
-    r"  ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚═╝  ╚═╝  ╚═════╝     ╚═╝    ╚═╝  ╚═╝ ",
+    r"     dBP dBP dBBBBBb   dBBBBBb    dBP dBP dBBBBBBP dBBBBBb  .dBBBBP   dBBBBb  dBP dBBBBBb  dBBBP ",
+    r"    d8P.dBP       BB       dBP                          BB  BP           dBP          dB'        ",
+    r"   dBBBBP     dBP BB   dBBBBK   dBP dBP    dBP      dBP BB  `BBBBb  dBP dBP dBP   dBBBP' dBBP    ",
+    r"  dBP BB     dBP  BB  dBP  BB  dBP_dBP    dBP      dBP  BB     dBP dBP dBP dBP   dBP    dBP      ",
+    r" dBP dBP    dBBBBBBB dBP  dB' dBBBBBP    dBP      dBBBBBBBdBBBBP' dBP dBP dBP   dBP    dBBBBP    ",
 ]
 _SNIPER = [
-    r"    ███████╗ ███╗   ██╗ ██╗ ██████╗  ███████╗ ██████╗  ",
-    r"    ██╔════╝ ████╗  ██║ ██║ ██╔══██╗ ██╔════╝ ██╔══██╗ ",
-    r"    ███████╗ ██╔██╗ ██║ ██║ ██████╔╝ █████╗   ██████╔╝ ",
-    r"    ╚════██║ ██║╚██╗██║ ██║ ██╔═══╝  ██╔══╝   ██╔══██╗ ",
-    r"    ███████║ ██║ ╚████║ ██║ ██║      ███████╗ ██║  ██║ ",
-    r"    ╚══════╝ ╚═╝  ╚═══╝ ╚═╝ ╚═╝      ╚══════╝ ╚═╝  ╚═╝ ",
 ]
 
 # animation sets
@@ -87,7 +80,7 @@ class KarutaConsole:
         filled = round(pct * width)
         bar    = C_TEAL + "█" * filled + C_GRAY + "░" * (width - filled) + R
         m, s   = divmod(secs, 60)
-        label  = f"{C_AMBER}{m}m{s:02d}s{R}" if m else f"{C_AMBER}{s:3d}s {R}"
+        label  = f"{C_DIM}{m}m{s:02d}s{R}" if m else f"{C_DIM}{s:3d}s {R}"
         return f"{bar} {label}"
 
     # build status str
@@ -100,7 +93,7 @@ class KarutaConsole:
             stat = f"{C_TEAL}{sp} SCANNING{R}"
         elif self.state == "WAITING":
             sp   = _SPINNER[t % len(_SPINNER)]
-            stat = f"{C_AMBER}{sp} COOLDOWN{R}"
+            stat = f"{C_GRAY}{sp} COOLDOWN{R}"
         elif self.state == "DROPPING":
             sp   = _DROP_SPIN[t % len(_DROP_SPIN)]
             stat = f"{C_PURPLE}{sp} DROPPING{R}"
@@ -172,8 +165,6 @@ class KarutaConsole:
         w = _term_w()
         self.log_raw("")
         for line in _KARUTA: self.log_raw(C_TEAL + line.center(w) + R)
-        self.log_raw("")
-        for line in _SNIPER: self.log_raw(C_PURPLE + line.center(w) + R)
         self.log_raw("")
 
     # render info box
