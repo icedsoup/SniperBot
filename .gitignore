@@ -1,0 +1,17 @@
+config.json
+log.txt
+temp/**
+!temp/.gitkeep
+!temp/char/.gitkeep
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.env
+venv/
+.venv/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
