@@ -27,8 +27,8 @@ match = "(is dropping [3-4] cards!)|(I'm dropping [3-4] cards since this server 
 path_to_ocr = "temp"
 v = "v2.3.2"
 
-# CardCompanion bot user ID — change this if it ever differs
-CARDCOMPANION_ID = 916548061400825887
+# CardCompanion UID
+CARDCOMPANION_ID = 1380936713639166082
 
 # set branch version
 if "v" in v:
@@ -442,7 +442,7 @@ class Main(discord.Client):
             dprint("Generosity blessing detected resetting drop cd")
             self.drop_timer = 0
 
-    # wishlist lookup
+    # clu
     async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, check, emoji):
         channel = self.get_channel(autodropchannel)
         if channel is None:
@@ -498,7 +498,8 @@ class Main(discord.Client):
                     wl_print(f"{C_AMBER}clu couldn't find{R} '{name}' {C_DIM}(OCR mismatch){R} — skipping")
                     continue
 
-            # parse cardcompanion
+            # parse CardCompanion embed
+
             wl = -1
             try:
                 embed = resp.embeds[0]
@@ -511,9 +512,9 @@ class Main(discord.Client):
                     f"content={resp.content!r}"
                 )
 
-                # embed description
                 if embed.description:
-                    m = re.search(r"wishlist\s*[:\-]\s*([\d,]+)", embed.description, re.IGNORECASE)
+                    desc_clean = embed.description.replace("**", "")
+                    m = re.search(r"wishlist\s*[:\-]\s*([\d,]+)", desc_clean, re.IGNORECASE)
                     if m:
                         wl = int(re.sub(r"[^0-9]", "", m.group(1)))
 
@@ -525,6 +526,7 @@ class Main(discord.Client):
                                 wl = int(wl_text)
                             break
 
+                # raw
                 if wl == -1 and resp.content:
                     m = re.search(r"wishlist\s*[:\-]\s*([\d,]+)", resp.content, re.IGNORECASE)
                     if m:
@@ -772,13 +774,6 @@ class Main(discord.Client):
                         chunk = min(remaining, 30)
                         await asyncio.sleep(chunk)
                         remaining -= chunk
-
-                grab_wait2, drop_wait2 = await self.check_kcd(channel)
-                extra = max(grab_wait2, drop_wait2)
-                if extra > 0:
-                    console.set_state("WAITING")
-                    tprint(f"Safety check: {C_AMBER}{extra}s{R} remaining — holding...")
-                    await asyncio.sleep(extra + 3)
 
                 console.set_state("DROPPING")
                 async with channel.typing():
