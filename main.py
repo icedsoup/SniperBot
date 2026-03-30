@@ -108,7 +108,6 @@ class Main(discord.Client):
         self.missed = 0
         self.collected = 0
         self.cardnum = 0
-        self.buttons = None
         self.lookup_next_at = 0.0
         self.lookup_lock = asyncio.Lock()
         self.drop_lock = asyncio.Lock()
@@ -212,6 +211,8 @@ class Main(discord.Client):
         ):
             return
 
+        buttons_ref = [None]
+
         def mcheck(before, after):
             if before.id != message.id:
                 return False
@@ -221,15 +222,12 @@ class Main(discord.Client):
                     return False
                 if children[0].disabled:
                     return False
-                self.buttons = children
+                buttons_ref[0] = children  # local per-drop, not shared state
                 dprint("Message edit found")
                 return True
             except (IndexError, AttributeError):
                 dprint(f"mcheck component error - {after.components}")
                 return False
-
-        def check(reaction0, user):
-            return reaction0.message.id == message.id
 
         if re.search("A wishlisted card is dropping!", message.content):
             dprint("Whishlisted card detected")
@@ -305,7 +303,7 @@ class Main(discord.Client):
                 
                 for i, number in enumerate(printlist):
                     try:
-                        printlist[i] = int(re.sub(" \d$| ", "", number))
+                        printlist[i] = int(re.sub(r" \d$| ", "", number))
                     except ValueError:
                         dprint(f"ValueError parsing print number: '{number}'")
                         printlist[i] = 9999999
@@ -396,12 +394,13 @@ class Main(discord.Client):
                             drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}edit_task error: {e}{R}")
                             grabbed = False
                         else:
-                            if self.buttons and grab_idx < len(self.buttons):
+                            local_buttons = buttons_ref[0]
+                            if local_buttons and grab_idx < len(local_buttons):
                                 await asyncio.sleep(random.uniform(0.55, 1.08))
-                                await self.buttons[grab_idx].click()
+                                await local_buttons[grab_idx].click()
                                 await self.afterclick()
                             else:
-                                drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}Button index {grab_idx} out of range (only {len(self.buttons) if self.buttons else 0} buttons){R}")
+                                drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}Button index {grab_idx} out of range (only {len(local_buttons) if local_buttons else 0} buttons){R}")
                                 grabbed = False
                     else:
                         if edit_task and not edit_task.done():
@@ -415,11 +414,11 @@ class Main(discord.Client):
             
             # fallback to wishlist
             if grab_idx == -1 and wishlist_lookup_enabled and cid in wishlist_watching_channels:
-                await self.do_wishlist_lookup(message, charlist, anilist, cid, mcheck, check, emoji)
+                await self.do_wishlist_lookup(message, charlist, anilist, cid, mcheck, emoji, buttons_ref)
         
         # confirm grab
-        elif re.search(f"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!", message.content):
-            a = re.search(f"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!", message.content)
+        elif re.search(rf"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!", message.content):
+            a = re.search(rf"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!", message.content)
             self.grab_timer = max(self.grab_timer + 540, 600)
             self.missed -= 1
             self.collected += 1
@@ -443,7 +442,7 @@ class Main(discord.Client):
             self.drop_timer = 0
 
     # clu
-    async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, check, emoji):
+    async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, emoji, buttons_ref):
         channel = self.get_channel(autodropchannel)
         if channel is None:
             channel = self.get_channel(message.channel.id)
@@ -562,9 +561,11 @@ class Main(discord.Client):
             except asyncio.TimeoutError:
                 wl_print(f"{C_CORAL}Button edit timed out — card gone{R}")
                 return
-            if self.buttons and best_idx < len(self.buttons):
+
+            local_buttons = buttons_ref[0]
+            if local_buttons and best_idx < len(local_buttons):
                 await asyncio.sleep(random.uniform(0.55, 1.08))
-                await self.buttons[best_idx].click()
+                await local_buttons[best_idx].click()
                 await self.afterclick()
             else:
                 wl_print(f"{C_CORAL}Button index {best_idx} out of range{R}")
@@ -796,12 +797,7 @@ class Main(discord.Client):
         async with channel.typing():
             await asyncio.sleep(random.uniform(0.2, 0.6))
 
-        fut = asyncio.get_event_loop().create_future()
-
-        def kcd_check(m):
-            return (m.author.id == 646937666251915264 and m.channel.id == channel.id and len(m.embeds) > 0)
-
-        listener_task = asyncio.get_event_loop().create_task(self.wait_for("message", timeout=10.0, check=kcd_check))
+        listener_task = asyncio.get_event_loop().create_task(self.wait_for("message", timeout=10.0, check=lambda m: (m.author.id == 646937666251915264 and m.channel.id == channel.id and len(m.embeds) > 0)))
         await channel.send("kcd")
 
         try:
