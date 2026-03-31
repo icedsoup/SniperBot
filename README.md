@@ -40,7 +40,7 @@ Add names you want to snipe, one per line:
 | `keywords/charblacklist.txt` | Characters to never claim |
 | `keywords/aniblacklist.txt` | Series to never claim from |
 
-> The bot reloads all four files automatically when they change.
+> The bot reloads all four files automatically when they change.\
 > You can specify the anime a character is from to avoid false positives ("char", "anime")
 
 ## Configuration
