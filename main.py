@@ -90,14 +90,35 @@ if autodrop:
 # start console
 console = KarutaConsole(version=v, use_timestamp=timestamp)
 
+
+# helpers
+
+def _parse_char_line(line: str):
+    """
+    Parse a single line from characters.txt.
+    Supported formats:
+        "Gojo Satoru"                  -> ('Gojo Satoru', None)
+        "Gojo Satoru, Jujutsu Kaisen"  -> ('Gojo Satoru', 'Jujutsu Kaisen')
+    """
+    line = line.strip()
+    if not line:
+        return None
+    if ',' in line:
+        parts = line.split(',', 1)
+        return (parts[0].strip(), parts[1].strip())
+    return (line, None)
+
+
 # bot class
+
 class Main(discord.Client):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.charblacklist = None
         self.aniblacklist = None
         self.animes = None
-        self.chars = None
+        # list of (char_name: str, anime: str | None)
+        self.chars: list[tuple[str, str | None]] = []
         self.messageid = None
         self.current_card = None
         self.ready = False
@@ -166,9 +187,9 @@ class Main(discord.Client):
         dprint(f"discord.py-self {discord.__version__}")
         if beta:
             tprint(f"{C_AMBER}Running beta branch — report confirmed bugs to the repo{R}")
-        
+
         await self.update_files()
-        
+
         # sub to guilds
         for guild in guilds:
             try:
@@ -176,7 +197,7 @@ class Main(discord.Client):
                                                       member_updates=False)
             except AttributeError:
                 tprint(f"{C_CORAL}Error subscribing to a server — are you in all listed servers?{R}")
-        
+
         # start tasks
         def spawn(coro, name="task"):
             t = asyncio.get_event_loop().create_task(coro)
@@ -203,7 +224,7 @@ class Main(discord.Client):
     # message listener
     async def on_message(self, message):
         cid = message.channel.id
- 
+
         if (
                 not self.ready
                 or message.author.id != 646937666251915264
@@ -222,7 +243,7 @@ class Main(discord.Client):
                     return False
                 if children[0].disabled:
                     return False
-                buttons_ref[0] = children  # local per-drop, not shared state
+                buttons_ref[0] = children
                 dprint("Message edit found")
                 return True
             except (IndexError, AttributeError):
@@ -230,7 +251,7 @@ class Main(discord.Client):
                 return False
 
         if re.search("A wishlisted card is dropping!", message.content):
-            dprint("Whishlisted card detected")
+            dprint("Wishlisted card detected")
 
         # drop match
         if self.grab_timer == 0 and re.search(match, message.content):
@@ -258,7 +279,7 @@ class Main(discord.Client):
                 # save image
                 with open("temp\\card.webp", "wb") as file:
                     file.write(requests.get(message.attachments[0].url).content)
-                
+
                 # split cards
                 if filelength("temp\\card.webp") == 836:
                     cardnum = 3
@@ -297,10 +318,10 @@ class Main(discord.Client):
                             printlist.append(ocr_print_number(path_to_ocr + f"\\char\\print{card_num}.png"))
                         else:
                             printlist.append("9999999")
-                
+
                 vprint(f"Anilist: {anilist}")
                 vprint(f"Charlist: {charlist}")
-                
+
                 for i, number in enumerate(printlist):
                     try:
                         printlist[i] = int(re.sub(r" \d$| ", "", number))
@@ -323,13 +344,13 @@ class Main(discord.Client):
                 char_matches = []
                 for i, character in enumerate(charlist):
                     if (
-                            api.isSomething(character, self.chars, accuracy)
+                            api.isSomethingChar(character, anilist[i], self.chars, accuracy)
                             and not api.isSomething(character, self.charblacklist, accuracy)
                             and not api.isSomething(anilist[i], self.aniblacklist, blaccuracy)
                     ):
-                        kw_idx = self.keyword_match_priority(character, self.chars, accuracy)
+                        kw_idx = self.keyword_match_priority_char(character, anilist[i], self.chars, accuracy)
                         char_matches.append((i, kw_idx, character))
-                
+
                 if char_matches:
                     char_matches.sort(key=lambda x: x[1])
                     grab_idx, _, best_char = char_matches[0]
@@ -350,7 +371,7 @@ class Main(discord.Client):
                         ):
                             kw_idx = self.keyword_match_priority(anime, self.animes, accuracy)
                             anime_matches.append((i, kw_idx, anime))
-                    
+
                     if anime_matches:
                         anime_matches.sort(key=lambda x: x[1])
                         grab_idx, _, best_anime = anime_matches[0]
@@ -411,11 +432,11 @@ class Main(discord.Client):
                         edit_task.cancel()
 
             console.set_state("IDLE")
-            
+
             # fallback to wishlist
             if grab_idx == -1 and wishlist_lookup_enabled and cid in wishlist_watching_channels:
                 await self.do_wishlist_lookup(message, charlist, anilist, cid, mcheck, emoji, buttons_ref)
-        
+
         # confirm grab
         elif re.search(rf"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!", message.content):
             a = re.search(rf"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!", message.content)
@@ -432,7 +453,7 @@ class Main(discord.Client):
                         ff.write(f"{current_time()} - Obtained: {a.group(1)}{reason_str} - {self.url}\n")
                     else:
                         ff.write(f"Obtained: {a.group(1)}{reason_str} - {self.url}\n")
-        
+
         # bless checks
         elif message.content.startswith(f"<@{str(self.user.id)}>, your **Evasion"):
             dprint("Evasion blessing detected resetting grab cd")
@@ -464,7 +485,6 @@ class Main(discord.Client):
                 wl_print(f"{C_AMBER}Skipping blacklisted anime:{R} {series}")
                 continue
 
-            # build clu query
             query = f"clu {series} {name}" if series else f"clu {name}"
 
             async with self.lookup_lock:
@@ -497,8 +517,6 @@ class Main(discord.Client):
                     wl_print(f"{C_AMBER}clu couldn't find{R} '{name}' {C_DIM}(OCR mismatch){R} — skipping")
                     continue
 
-            # parse CardCompanion embed
-
             wl = -1
             try:
                 embed = resp.embeds[0]
@@ -525,7 +543,6 @@ class Main(discord.Client):
                                 wl = int(wl_text)
                             break
 
-                # raw
                 if wl == -1 and resp.content:
                     m = re.search(r"wishlist\s*[:\-]\s*([\d,]+)", resp.content, re.IGNORECASE)
                     if m:
@@ -550,11 +567,11 @@ class Main(discord.Client):
         wl_print(f"Grabbing {C_MINT}{charlist[best_idx]}{R} with {C_GOLD}{best_wl}{R} wishlists")
         self.url = message.attachments[0].url
         self.grab_reason = f"Wishlist ({best_wl}): {charlist[best_idx]} from {anilist[best_idx]}"
-        
+
         if loghits:
             with open("log.txt", "a") as ff:
                 ff.write(f"{current_time() + ' - ' if timestamp else ''}Wishlist ({best_wl}): {charlist[best_idx]} from {anilist[best_idx]} - {message.attachments[0].url}\n")
-        
+
         if isbutton(cid):
             try:
                 await self.wait_for("message_edit", check=mcheck, timeout=25.0)
@@ -586,15 +603,37 @@ class Main(discord.Client):
         console.missed = self.missed
         dprint(f"Reacted with {emoji} successfully")
 
-    # sort match index
+    # keyword priority helpers
+
     @staticmethod
     def keyword_match_priority(text, keyword_list, threshold):
+        """Priority index for a flat keyword list (animes, blacklists)."""
         text_l = text.lower().strip()
         for idx, kw in enumerate(keyword_list):
             kw_l = kw.lower().strip()
             if kw_l and SequenceMatcher(None, text_l, kw_l).ratio() >= threshold:
                 return idx
         return len(keyword_list)
+
+    @staticmethod
+    def keyword_match_priority_char(char_text: str, anime_text: str,
+                                    parsed_chars: list, threshold: float) -> int:
+        """
+        Priority index for a parsed chars list of (name, optional_anime) tuples.
+        Lower index = higher priority (appears earlier in the keyword file).
+        When an anime qualifier is present it must also match.
+        """
+        char_l  = char_text.lower().strip()
+        anime_l = anime_text.lower().strip()
+        for idx, (char_name, char_anime) in enumerate(parsed_chars):
+            if not char_name:
+                continue
+            if SequenceMatcher(None, char_l, char_name.lower()).ratio() >= threshold:
+                if char_anime is None:
+                    return idx
+                if SequenceMatcher(None, anime_l, char_anime.lower()).ratio() >= threshold:
+                    return idx
+        return len(parsed_chars)
 
     # clean up text
     @staticmethod
@@ -662,15 +701,27 @@ class Main(discord.Client):
 
     # reload kw files
     async def update_files(self):
-        with open("keywords\\characters.txt") as ff:
-            self.chars = ff.read().splitlines()
-        with open("keywords\\animes.txt") as ff:
+        with open("keywords\\characters.txt", encoding="utf-8") as ff:
+            raw_chars = ff.read().splitlines()
+        self.chars = []
+        for line in raw_chars:
+            parsed = _parse_char_line(line)
+            if parsed:
+                self.chars.append(parsed)
+
+        with open("keywords\\animes.txt", encoding="utf-8") as ff:
             self.animes = ff.read().splitlines()
-        with open("keywords\\aniblacklist.txt") as ff:
+        with open("keywords\\aniblacklist.txt", encoding="utf-8") as ff:
             self.aniblacklist = ff.read().splitlines()
-        with open("keywords\\charblacklist.txt") as ff:
+        with open("keywords\\charblacklist.txt", encoding="utf-8") as ff:
             self.charblacklist = ff.read().splitlines()
-        tprint(f"Loaded  {C_TEAL}{len(self.animes)}{R} animes  {C_DIM}│{R}  {C_CORAL}{len(self.aniblacklist)}{R} blacklisted  {C_DIM}│{R}  {C_TEAL}{len(self.chars)}{R} characters  {C_DIM}│{R}  {C_CORAL}{len(self.charblacklist)}{R} blacklisted")
+
+        tprint(
+            f"Loaded  {C_TEAL}{len(self.animes)}{R} animes  "
+            f"{C_DIM}│{R}  {C_CORAL}{len(self.aniblacklist)}{R} blacklisted  "
+            f"{C_DIM}│{R}  {C_TEAL}{len(self.chars)}{R} characters  "
+            f"{C_DIM}│{R}  {C_CORAL}{len(self.charblacklist)}{R} blacklisted"
+        )
 
     # watch text files
     async def filewatch(self, path):
@@ -842,7 +893,10 @@ class Main(discord.Client):
         self.missed += 1
         console.missed = self.missed
 
-# fix bad ocr text
+
+# module-level helpers
+
+
 def fix_ocr_spaces(text):
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
     text = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', text)
@@ -850,52 +904,34 @@ def fix_ocr_spaces(text):
     text = re.sub(r' {2,}', ' ', text)
     return text.strip()
 
-# get time string
+
 def current_time():
     return datetime.now().strftime("%H:%M:%S")
 
-# verify button source
+
 def isbutton(data):
-    if data in [648044573536550922, 776520559621570621, 858004885809922078, 857978372688445481]:
-        return True
-    else:
-        return False
-    
+    return data in [648044573536550922, 776520559621570621, 858004885809922078, 857978372688445481]
+
+
 # print wrappers
-def tprint(message):
-    console.log(message)
-
+def tprint(message):       console.log(message)
 def dprint(message):
-    if debug:
-        console.log_debug(message)
-
+    if debug: console.log_debug(message)
 def vprint(message):
-    if verbose:
-        console.log_info(message)
-
+    if verbose: console.log_info(message)
 def drop_print(message):
-    if log_drops:
-        console.log_grab(message)
-
+    if log_drops: console.log_grab(message)
 def grab_print(message):
-    if log_grabs:
-        console.log_collect(message)
-
+    if log_grabs: console.log_collect(message)
 def wl_print(message):
-    if log_wishlist:
-        console.log_wl(message)
-
+    if log_wishlist: console.log_wl(message)
 def autodrop_print(message):
-    if log_autodrop:
-        console.log_drop(message)
-
+    if log_autodrop: console.log_drop(message)
 def kcd_print(message):
-    if log_kcd:
-        console.log_kcd(message)
-
+    if log_kcd: console.log_kcd(message)
 def farm_print(message):
-    if log_autofarm:
-        console.log_farm(message)
+    if log_autofarm: console.log_farm(message)
+
 
 # token auth
 if token == "":

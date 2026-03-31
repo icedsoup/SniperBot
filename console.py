@@ -1,6 +1,7 @@
 import asyncio
 import re
 import sys
+import unicodedata
 from datetime import datetime
 from os import get_terminal_size
 
@@ -28,8 +29,6 @@ _KARUTA = [
     r"  dBP BB     dBP  BB  dBP  BB  dBP_dBP    dBP      dBP  BB     dBP dBP dBP dBP   dBP    dBP      ",
     r" dBP dBP    dBBBBBBB dBP  dB' dBBBBBP    dBP      dBBBBBBBdBBBBP' dBP dBP dBP   dBP    dBBBBP    ",
 ]
-_SNIPER = [
-]
 
 # animation sets
 _SPINNER   = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -37,19 +36,39 @@ _SCAN_SPIN = ['◐', '◓', '◑', '◒']
 _DROP_SPIN = ['▖', '▘', '▝', '▗']
 _IDLE_DOTS = ['·', '·', '·', '○']
 
-# regex helper
+# regex
 _ANSI = re.compile(r'\x1b\[[0-9;]*[mK]')
 
-# check string len
-def _vlen(s: str) -> int:
-    return len(_ANSI.sub('', s))
 
-# get console width
+def _char_width(ch: str) -> int:
+    """Return the terminal display width of a single character (1 or 2)."""
+    eaw = unicodedata.east_asian_width(ch)
+    return 2 if eaw in ('W', 'F') else 1
+
+
+def _vlen(s: str) -> int:
+    """Visible display width of a string, stripping ANSI and counting wide chars."""
+    clean = _ANSI.sub('', s)
+    return sum(_char_width(c) for c in clean)
+
+
 def _term_w() -> int:
     try:
         return get_terminal_size().columns
     except Exception:
         return 80
+
+
+def _truncate_visual(text: str, max_width: int) -> str:
+    """Truncate plain text to at most max_width display columns."""
+    width = 0
+    for i, ch in enumerate(text):
+        w = _char_width(ch)
+        if width + w > max_width:
+            return text[:i]
+        width += w
+    return text
+
 
 # console renderer
 class KarutaConsole:
@@ -113,19 +132,18 @@ class KarutaConsole:
         vlen = _vlen(line)
         if vlen > w - 2:
             plain = _ANSI.sub('', line)
-            line  = plain[:w - 5] + "..." + R
+            line  = _truncate_visual(plain, w - 5) + "..." + R
 
         return line
 
     # wipe current line
     def _erase_status(self):
         if self._status_drawn:
-            w = _term_w()
-            sys.stdout.write('\r' + ' ' * w + '\r')
+            sys.stdout.write('\r\x1b[2K')
             sys.stdout.flush()
             self._status_drawn = False
 
-    # render current line
+    # render status
     def _draw_status(self):
         sys.stdout.write('\r' + self._build_status())
         sys.stdout.flush()
@@ -150,21 +168,22 @@ class KarutaConsole:
         self._draw_status()
 
     # log types
-    def log_grab(self, msg: str): self._emit(f"{C_TEAL}[GRAB]{R}", msg)
+    def log_grab(self, msg: str):    self._emit(f"{C_TEAL}[GRAB]{R}", msg)
     def log_collect(self, msg: str): self._emit(f"{C_MINT}[GOT ]{R}", msg)
-    def log_drop(self, msg: str): self._emit(f"{C_PURPLE}[DROP]{R}", msg)
-    def log_wl(self, msg: str): self._emit(f"{C_GOLD}[WL  ]{R}", msg)
-    def log_kcd(self, msg: str): self._emit(f"{C_BLUE}[KCD ]{R}", msg)
-    def log_debug(self, msg: str): self._emit(f"{C_ROSE}[DBG ]{R}", msg)
-    def log_warn(self, msg: str): self._emit(f"{C_CORAL}[WARN]{R}", msg)
-    def log_info(self, msg: str): self._emit(f"{C_BLUE}[INFO]{R}", msg)
-    def log_farm(self, msg: str): self._emit(f"{C_PURPLE}[FARM]{R}", msg)
+    def log_drop(self, msg: str):    self._emit(f"{C_PURPLE}[DROP]{R}", msg)
+    def log_wl(self, msg: str):      self._emit(f"{C_GOLD}[WL  ]{R}", msg)
+    def log_kcd(self, msg: str):     self._emit(f"{C_BLUE}[KCD ]{R}", msg)
+    def log_debug(self, msg: str):   self._emit(f"{C_ROSE}[DBG ]{R}", msg)
+    def log_warn(self, msg: str):    self._emit(f"{C_CORAL}[WARN]{R}", msg)
+    def log_info(self, msg: str):    self._emit(f"{C_BLUE}[INFO]{R}", msg)
+    def log_farm(self, msg: str):    self._emit(f"{C_PURPLE}[FARM]{R}", msg)
 
     # splash screen
     def print_banner(self):
         w = _term_w()
         self.log_raw("")
-        for line in _KARUTA: self.log_raw(C_TEAL + line.center(w) + R)
+        for line in _KARUTA:
+            self.log_raw(C_TEAL + line.center(w) + R)
         self.log_raw("")
 
     # render info box

