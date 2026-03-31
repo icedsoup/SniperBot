@@ -8,7 +8,7 @@ from os import get_terminal_size
 from colorama import Fore, Style
 
 # color map
-R    = Style.RESET_ALL
+R        = Style.RESET_ALL
 C_TEAL   = Fore.LIGHTCYAN_EX
 C_PURPLE = Fore.LIGHTMAGENTA_EX
 C_AMBER  = Fore.LIGHTWHITE_EX
@@ -145,7 +145,7 @@ class KarutaConsole:
 
     # render status
     def _draw_status(self):
-        sys.stdout.write('\r' + self._build_status())
+        sys.stdout.write('\r\x1b[2K' + self._build_status())
         sys.stdout.flush()
         self._status_drawn = True
 

@@ -7,7 +7,7 @@ import sys
 import unicodedata
 from difflib import SequenceMatcher
 from datetime import datetime
-from os import listdir, get_terminal_size
+from os import listdir
 from os.path import isfile, join
 
 import discord
@@ -30,14 +30,6 @@ v = "v2.3.2"
 # CardCompanion UID
 CARDCOMPANION_ID = 1380936713639166082
 
-# set branch version
-if "v" in v:
-    beta = False
-    update_url = "https://raw.githubusercontent.com/NoMeansNowastaken/KarutaSniper/master/version.txt"
-else:
-    beta = True
-    update_url = "https://raw.githubusercontent.com/NoMeansNowastaken/KarutaSniper/beta/version.txt"
-
 # load config
 with open("config.json") as f:
     config = json.load(f)
@@ -56,7 +48,6 @@ blaccuracy = float(config["blaccuracy"])
 loghits = config["log_hits"]
 logcollection = config["log_collection"]
 timestamp = config["timestamp"]
-update = config["update_check"]
 autodrop = config["autodrop"]
 debug = config["debug"]
 cprint = config["check_print"]
@@ -72,20 +63,20 @@ clear_console_on_start = config.get("clear_console_on_start", True)
 lookup_delay = float(config.get("lookup_delay", 1.5))
 
 # output toggles
-log_drops = config.get("log_drops", True)
-log_grabs = config.get("log_grabs", True)
+log_drops    = config.get("log_drops",    True)
+log_grabs    = config.get("log_grabs",    True)
 log_wishlist = config.get("log_wishlist", True)
 log_autodrop = config.get("log_autodrop", True)
-log_kcd = config.get("log_kcd", True)
+log_kcd      = config.get("log_kcd",      True)
 log_autofarm = config.get("log_autofarm", True)
 
 if cprint:
     pn = int(config["print_number"])
 if autodrop:
     autodropchannel = config["autodropchannel"]
-    dropdelay = config["dropdelay"]
-    randmin = int(config["randmin"])
-    randmax = int(config["randmax"])
+    dropdelay       = config["dropdelay"]
+    randmin         = int(config["randmin"])
+    randmax         = int(config["randmax"])
 
 # start console
 console = KarutaConsole(version=v, use_timestamp=timestamp)
@@ -96,7 +87,7 @@ console = KarutaConsole(version=v, use_timestamp=timestamp)
 def _parse_char_line(line: str):
     """
     Parse a single line from characters.txt.
-    Supported formats:
+    Formats:
         "Gojo Satoru"                  -> ('Gojo Satoru', None)
         "Gojo Satoru, Jujutsu Kaisen"  -> ('Gojo Satoru', 'Jujutsu Kaisen')
     """
@@ -115,23 +106,23 @@ class Main(discord.Client):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.charblacklist = None
-        self.aniblacklist = None
-        self.animes = None
+        self.aniblacklist  = None
+        self.animes        = None
         # list of (char_name: str, anime: str | None)
         self.chars: list[tuple[str, str | None]] = []
-        self.messageid = None
+        self.messageid    = None
         self.current_card = None
-        self.ready = False
-        self.grab_timer = 0
-        self.drop_timer = 0
-        self.url = None
-        self.grab_reason = ""
-        self.missed = 0
-        self.collected = 0
-        self.cardnum = 0
+        self.ready        = False
+        self.grab_timer   = 0
+        self.drop_timer   = 0
+        self.url          = None
+        self.grab_reason  = ""
+        self.missed       = 0
+        self.collected    = 0
+        self.cardnum      = 0
         self.lookup_next_at = 0.0
-        self.lookup_lock = asyncio.Lock()
-        self.drop_lock = asyncio.Lock()
+        self.lookup_lock  = asyncio.Lock()
+        self.drop_lock    = asyncio.Lock()
         if autofarm:
             self.button = None
 
@@ -151,7 +142,6 @@ class Main(discord.Client):
         )
         _sections.append(("ONLINE", [_user_str]))
 
-        # build watch lists
         _watch_items = []
         for _cid in channels:
             _ch = self.get_channel(_cid)
@@ -185,18 +175,17 @@ class Main(discord.Client):
 
         console.print_startup_box(_sections)
         dprint(f"discord.py-self {discord.__version__}")
-        if beta:
-            tprint(f"{C_AMBER}Running beta branch — report confirmed bugs to the repo{R}")
 
         await self.update_files()
 
-        # sub to guilds
+        # subscribe to guilds
         for guild in guilds:
             try:
-                await self.get_guild(guild).subscribe(typing=True, activities=False, threads=False,
-                                                      member_updates=False)
+                await self.get_guild(guild).subscribe(
+                    typing=True, activities=False, threads=False, member_updates=False
+                )
             except AttributeError:
-                tprint(f"{C_CORAL}Error subscribing to a server — are you in all listed servers?{R}")
+                tprint(f"{C_CORAL}Error subscribing to a server?{R}")
 
         # start tasks
         def spawn(coro, name="task"):
@@ -208,13 +197,13 @@ class Main(discord.Client):
             t.add_done_callback(_done)
             return t
 
-        spawn(self.cooldown(), "cooldown")
-        spawn(self.filewatch("keywords\\animes.txt"), "filewatch:animes")
+        spawn(self.cooldown(),                          "cooldown")
+        spawn(self.filewatch("keywords\\animes.txt"),  "filewatch:animes")
         spawn(self.filewatch("keywords\\characters.txt"), "filewatch:characters")
         spawn(self.filewatch("keywords\\aniblacklist.txt"), "filewatch:aniblacklist")
-        spawn(self.configwatch("config.json"), "configwatch")
+        spawn(self.configwatch("config.json"),          "configwatch")
         spawn(self.filewatch("keywords\\charblacklist.txt"), "filewatch:charblacklist")
-        spawn(console.animate(), "console:animate")
+        spawn(console.animate(),                        "console:animate")
         if autodrop:
             spawn(self.autodrop(), "autodrop")
         if autofarm:
@@ -226,9 +215,9 @@ class Main(discord.Client):
         cid = message.channel.id
 
         if (
-                not self.ready
-                or message.author.id != 646937666251915264
-                or cid not in channels
+            not self.ready
+            or message.author.id != 646937666251915264
+            or cid not in channels
         ):
             return
 
@@ -267,8 +256,8 @@ class Main(discord.Client):
             console.set_state("SCANNING")
 
             charlist = []
-            anilist = []
-            grabbed = False
+            anilist  = []
+            grabbed  = False
 
             async with self.drop_lock:
                 if self.grab_timer != 0:
@@ -337,16 +326,16 @@ class Main(discord.Client):
                         case 2: return "3️⃣"
                         case 3: return "4️⃣"
 
-                grab_idx = -1
+                grab_idx    = -1
                 grab_reason = ""
 
                 # check char matches
                 char_matches = []
                 for i, character in enumerate(charlist):
                     if (
-                            api.isSomethingChar(character, anilist[i], self.chars, accuracy)
-                            and not api.isSomething(character, self.charblacklist, accuracy)
-                            and not api.isSomething(anilist[i], self.aniblacklist, blaccuracy)
+                        api.isSomethingChar(character, anilist[i], self.chars, accuracy)
+                        and not api.isSomething(character, self.charblacklist, accuracy)
+                        and not api.isSomething(anilist[i], self.aniblacklist, blaccuracy)
                     ):
                         kw_idx = self.keyword_match_priority_char(character, anilist[i], self.chars, accuracy)
                         char_matches.append((i, kw_idx, character))
@@ -354,20 +343,25 @@ class Main(discord.Client):
                 if char_matches:
                     char_matches.sort(key=lambda x: x[1])
                     grab_idx, _, best_char = char_matches[0]
-                    grab_reason = f"Character: {C_MINT}{best_char}{R}  {C_DIM}from{R}  {C_TEAL}{anilist[grab_idx]}{R}"
+                    grab_reason = (
+                        f"Character: {C_MINT}{best_char}{R}  {C_DIM}from{R}  {C_TEAL}{anilist[grab_idx]}{R}"
+                    )
                     self.grab_reason = f"Character: {best_char} from {anilist[grab_idx]}"
                     if loghits:
                         with open("log.txt", "a") as ff:
-                            ff.write(f"{current_time() + ' - ' if timestamp else ''}Character: {best_char} from {anilist[grab_idx]} - {message.attachments[0].url}\n")
+                            ff.write(
+                                f"{current_time() + ' - ' if timestamp else ''}"
+                                f"Character: {best_char} from {anilist[grab_idx]} - {message.attachments[0].url}\n"
+                            )
 
                 # check anime matches
                 if grab_idx == -1:
                     anime_matches = []
                     for i, anime in enumerate(anilist):
                         if (
-                                api.isSomething(anime, self.animes, accuracy)
-                                and not api.isSomething(charlist[i], self.charblacklist, accuracy)
-                                and not api.isSomething(anime, self.aniblacklist, blaccuracy)
+                            api.isSomething(anime, self.animes, accuracy)
+                            and not api.isSomething(charlist[i], self.charblacklist, accuracy)
+                            and not api.isSomething(anime, self.aniblacklist, blaccuracy)
                         ):
                             kw_idx = self.keyword_match_priority(anime, self.animes, accuracy)
                             anime_matches.append((i, kw_idx, anime))
@@ -375,22 +369,35 @@ class Main(discord.Client):
                     if anime_matches:
                         anime_matches.sort(key=lambda x: x[1])
                         grab_idx, _, best_anime = anime_matches[0]
-                        grab_reason = f"Anime: {C_TEAL}{best_anime}{R}  {C_DIM}│{R}  {C_MINT}{charlist[grab_idx]}{R}"
+                        grab_reason = (
+                            f"Anime: {C_TEAL}{best_anime}{R}  {C_DIM}│{R}  {C_MINT}{charlist[grab_idx]}{R}"
+                        )
                         self.grab_reason = f"Anime: {best_anime} | {charlist[grab_idx]}"
                         if loghits:
                             with open("log.txt", "a") as ff:
-                                ff.write(f"{current_time() + ' - ' if timestamp else ''}Anime: {best_anime} | {charlist[grab_idx]} - {message.attachments[0].url}\n")
+                                ff.write(
+                                    f"{current_time() + ' - ' if timestamp else ''}"
+                                    f"Anime: {best_anime} | {charlist[grab_idx]} - {message.attachments[0].url}\n"
+                                )
 
                 # check print matches
                 if grab_idx == -1 and cprint:
                     for i, prin in enumerate(printlist):
-                        if prin <= pn and anilist[i] not in self.aniblacklist and charlist[i] not in self.charblacklist:
-                            grab_idx = i
+                        if (
+                            prin <= pn
+                            and anilist[i] not in self.aniblacklist
+                            and charlist[i] not in self.charblacklist
+                        ):
+                            grab_idx    = i
                             grab_reason = f"Print #{C_GOLD}{prin}{R}"
                             self.grab_reason = f"Print #{prin}: {charlist[i]} from {anilist[i]}"
                             if loghits:
                                 with open("log.txt", "a") as ff:
-                                    ff.write(f"{current_time() + ' - ' if timestamp else ''}Print #{prin}: {charlist[i]} from {anilist[i]} - {re.sub(chr(63) + '.*', '', message.attachments[0].url)}\n")
+                                    ff.write(
+                                        f"{current_time() + ' - ' if timestamp else ''}"
+                                        f"Print #{prin}: {charlist[i]} from {anilist[i]} - "
+                                        f"{re.sub(chr(63) + '.*', '', message.attachments[0].url)}\n"
+                                    )
                             break
 
                 # execute grab
@@ -398,8 +405,9 @@ class Main(discord.Client):
                 if grabbed:
                     drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {grab_reason}")
                     self.url = message.attachments[0].url
+
                     if isbutton(cid):
-                        elapsed = asyncio.get_running_loop().time() - ocr_start
+                        elapsed   = asyncio.get_running_loop().time() - ocr_start
                         remaining = max(BUTTON_WINDOW - elapsed, 1.0)
                         try:
                             if edit_task.done():
@@ -409,7 +417,11 @@ class Main(discord.Client):
                                 await asyncio.wait_for(asyncio.shield(edit_task), timeout=remaining)
                         except asyncio.TimeoutError:
                             edit_task.cancel()
-                            drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}Button edit timed out after {elapsed:.1f}s OCR + {remaining:.1f}s wait — card gone{R}")
+                            drop_print(
+                                f"{C_TEAL}[{message.channel.name}]{R}  "
+                                f"{C_CORAL}Button edit timed out after {elapsed:.1f}s OCR + "
+                                f"{remaining:.1f}s wait — card gone{R}"
+                            )
                             grabbed = False
                         except Exception as e:
                             drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}edit_task error: {e}{R}")
@@ -417,11 +429,28 @@ class Main(discord.Client):
                         else:
                             local_buttons = buttons_ref[0]
                             if local_buttons and grab_idx < len(local_buttons):
-                                await asyncio.sleep(random.uniform(0.55, 1.08))
-                                await local_buttons[grab_idx].click()
-                                await self.afterclick()
+                                await asyncio.sleep(random.uniform(0.1, 0.35))
+                                try:
+                                    await local_buttons[grab_idx].click()
+                                    await self.afterclick()
+                                except discord.errors.InvalidData:
+                                    drop_print(
+                                        f"{C_TEAL}[{message.channel.name}]{R}  "
+                                        f"{C_CORAL}Interaction failed — Discord didn't ACK in time (card likely gone){R}"
+                                    )
+                                    grabbed = False
+                                except Exception as e:
+                                    drop_print(
+                                        f"{C_TEAL}[{message.channel.name}]{R}  "
+                                        f"{C_CORAL}Button click error: {e}{R}"
+                                    )
+                                    grabbed = False
                             else:
-                                drop_print(f"{C_TEAL}[{message.channel.name}]{R}  {C_CORAL}Button index {grab_idx} out of range (only {len(local_buttons) if local_buttons else 0} buttons){R}")
+                                drop_print(
+                                    f"{C_TEAL}[{message.channel.name}]{R}  "
+                                    f"{C_CORAL}Button index {grab_idx} out of range "
+                                    f"(only {len(local_buttons) if local_buttons else 0} buttons){R}"
+                                )
                                 grabbed = False
                     else:
                         if edit_task and not edit_task.done():
@@ -438,13 +467,20 @@ class Main(discord.Client):
                 await self.do_wishlist_lookup(message, charlist, anilist, cid, mcheck, emoji, buttons_ref)
 
         # confirm grab
-        elif re.search(rf"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!", message.content):
-            a = re.search(rf"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!", message.content)
+        elif re.search(
+            rf"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!"
+            rf"|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!",
+            message.content
+        ):
+            a = re.search(
+                rf"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!",
+                message.content
+            )
             self.grab_timer = max(self.grab_timer + 540, 600)
-            self.missed -= 1
+            self.missed    -= 1
             self.collected += 1
             console.collected = self.collected
-            console.missed = self.missed
+            console.missed    = self.missed
             grab_print(f"{C_TEAL}[{message.channel.name}]{R}  Obtained  {C_MINT}{a.group(1)}{R}")
             if logcollection:
                 with open("log.txt", "a") as ff:
@@ -456,24 +492,24 @@ class Main(discord.Client):
 
         # bless checks
         elif message.content.startswith(f"<@{str(self.user.id)}>, your **Evasion"):
-            dprint("Evasion blessing detected resetting grab cd")
+            dprint("Evasion blessing detected — resetting grab cd")
             self.grab_timer = 0
         elif message.content.startswith(f"<@{str(self.user.id)}>, your **Generosity"):
-            dprint("Generosity blessing detected resetting drop cd")
+            dprint("Generosity blessing detected — resetting drop cd")
             self.drop_timer = 0
 
-    # clu
+    # wishlist fallback
     async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, emoji, buttons_ref):
         channel = self.get_channel(autodropchannel)
         if channel is None:
             channel = self.get_channel(message.channel.id)
         best_idx = -1
-        best_wl = -1
+        best_wl  = -1
 
         wl_print(f"{C_TEAL}[{channel.name}]{R} No keyword match — checking wishlists...")
 
         for i in range(len(charlist)):
-            name = self.normalize_ocr_text(fix_ocr_spaces(charlist[i].strip()))
+            name   = self.normalize_ocr_text(fix_ocr_spaces(charlist[i].strip()))
             series = self.normalize_ocr_text(fix_ocr_spaces(anilist[i].strip()))
             if not name:
                 continue
@@ -488,7 +524,7 @@ class Main(discord.Client):
             query = f"clu {series} {name}" if series else f"clu {name}"
 
             async with self.lookup_lock:
-                now = asyncio.get_running_loop().time()
+                now       = asyncio.get_running_loop().time()
                 wait_time = self.lookup_next_at - now
                 if wait_time > 0:
                     wl_print(f"{C_AMBER}Rate limit — waiting {wait_time:.1f}s before next lookup{R}")
@@ -551,26 +587,36 @@ class Main(discord.Client):
             except Exception as e:
                 dprint(f"WL parse error for {name}: {e}")
 
-            wl_print(f"{C_WHITE}{name}{R} {C_DIM}({series}){R}  {C_DIM}▸{R}  {C_GOLD}{wl if wl >= 0 else '?'} wishlists{R}")
+            wl_print(
+                f"{C_WHITE}{name}{R} {C_DIM}({series}){R}  {C_DIM}▸{R}  "
+                f"{C_GOLD}{wl if wl >= 0 else '?'} wishlists{R}"
+            )
 
             if wl > best_wl:
-                best_wl = wl
+                best_wl  = wl
                 best_idx = i
 
             if i < len(charlist) - 1:
                 await asyncio.sleep(random.uniform(0.3, 0.8))
 
         if best_idx == -1 or best_wl < min_wishlist:
-            wl_print(f"Best wishlist: {C_CORAL}{best_wl}{R} — below threshold of {C_AMBER}{min_wishlist}{R}, skipping")
+            wl_print(
+                f"Best wishlist: {C_CORAL}{best_wl}{R} — "
+                f"below threshold of {C_AMBER}{min_wishlist}{R}, skipping"
+            )
             return
 
         wl_print(f"Grabbing {C_MINT}{charlist[best_idx]}{R} with {C_GOLD}{best_wl}{R} wishlists")
-        self.url = message.attachments[0].url
+        self.url         = message.attachments[0].url
         self.grab_reason = f"Wishlist ({best_wl}): {charlist[best_idx]} from {anilist[best_idx]}"
 
         if loghits:
             with open("log.txt", "a") as ff:
-                ff.write(f"{current_time() + ' - ' if timestamp else ''}Wishlist ({best_wl}): {charlist[best_idx]} from {anilist[best_idx]} - {message.attachments[0].url}\n")
+                ff.write(
+                    f"{current_time() + ' - ' if timestamp else ''}"
+                    f"Wishlist ({best_wl}): {charlist[best_idx]} from {anilist[best_idx]} - "
+                    f"{message.attachments[0].url}\n"
+                )
 
         if isbutton(cid):
             try:
@@ -581,9 +627,14 @@ class Main(discord.Client):
 
             local_buttons = buttons_ref[0]
             if local_buttons and best_idx < len(local_buttons):
-                await asyncio.sleep(random.uniform(0.55, 1.08))
-                await local_buttons[best_idx].click()
-                await self.afterclick()
+                await asyncio.sleep(random.uniform(0.1, 0.35))
+                try:
+                    await local_buttons[best_idx].click()
+                    await self.afterclick()
+                except discord.errors.InvalidData:
+                    wl_print(f"{C_CORAL}Interaction failed — Discord didn't ACK in time (card likely gone){R}")
+                except Exception as e:
+                    wl_print(f"{C_CORAL}Button click error: {e}{R}")
             else:
                 wl_print(f"{C_CORAL}Button index {best_idx} out of range{R}")
         else:
@@ -593,14 +644,14 @@ class Main(discord.Client):
     async def react_add(self, message, emoji):
         try:
             dprint("Attempting to react")
-            await asyncio.sleep(random.uniform(0.55, 1.08))
+            await asyncio.sleep(random.uniform(0.1, 0.35))
             await message.add_reaction(emoji)
         except discord.errors.Forbidden as oopsie:
             dprint(f"React failed: {oopsie}")
             return
         self.grab_timer += 60
-        self.missed += 1
-        console.missed = self.missed
+        self.missed     += 1
+        console.missed   = self.missed
         dprint(f"Reacted with {emoji} successfully")
 
     # keyword priority helpers
@@ -635,7 +686,7 @@ class Main(discord.Client):
                     return idx
         return len(parsed_chars)
 
-    # clean up text
+    # clean up OCR text
     @staticmethod
     def normalize_ocr_text(text):
         text = unicodedata.normalize("NFKC", text or "")
@@ -664,7 +715,7 @@ class Main(discord.Client):
         text = re.sub(r"\s{2,}", " ", text)
         return text.strip()
 
-    # run ocr thread
+    # run OCR in thread
     async def ocr_best(self, image_path):
         def _run():
             text = ocr_image(image_path)
@@ -687,19 +738,17 @@ class Main(discord.Client):
             console.missed     = self.missed
 
             if console.state in ("WAITING", "IDLE"):
-                if self.grab_timer > 0:
-                    console.set_state("WAITING")
-                else:
-                    console.set_state("IDLE")
+                console.set_state("WAITING" if self.grab_timer > 0 else "IDLE")
 
             if title:
                 grab_str = f"Grab: {self.grab_timer}s" if self.grab_timer > 0 else "Grab: ready"
                 drop_str = f"Drop: {self.drop_timer}s" if self.drop_timer > 0 else "Drop: ready"
                 await asyncio.create_subprocess_shell(
-                    f"title Karuta Sniper {v} - Collected {self.collected} - Missed {self.missed} - {grab_str} - {drop_str}"
+                    f"title Karuta Sniper {v} - Collected {self.collected} - Missed {self.missed} - "
+                    f"{grab_str} - {drop_str}"
                 )
 
-    # reload kw files
+    # reload keyword files
     async def update_files(self):
         with open("keywords\\characters.txt", encoding="utf-8") as ff:
             raw_chars = ff.read().splitlines()
@@ -732,19 +781,19 @@ class Main(discord.Client):
             if bruh.watch():
                 await self.update_files()
 
-    # watch json
+    # watch config.json
     async def configwatch(self, path):
         bruh = api.FileWatch(path)
         while True:
             await asyncio.sleep(1)
             if bruh.watch():
                 with open("config.json") as ff:
-                    config = json.load(ff)
-                    global accuracy, wishlist_lookup_enabled, wishlist_watching_channels
-                    accuracy = float(config["accuracy"])
-                    wishlist_lookup_enabled = config.get("wishlist_lookup", True)
-                    wishlist_watching_channels = config.get("wishlist_watching_channels", channels)
-                    dprint("Config reloaded")
+                    cfg = json.load(ff)
+                global accuracy, wishlist_lookup_enabled, wishlist_watching_channels
+                accuracy                  = float(cfg["accuracy"])
+                wishlist_lookup_enabled   = cfg.get("wishlist_lookup", True)
+                wishlist_watching_channels = cfg.get("wishlist_watching_channels", channels)
+                dprint("Config reloaded")
 
     # auto farm
     async def autofarm(self):
@@ -756,18 +805,13 @@ class Main(discord.Client):
             async for message in channel.history(limit=1):
                 dprint(message.content)
                 if "you do not have" in message.content:
-                    farm_print("Autofarm - You dont have a permit")
+                    farm_print("Autofarm - You don't have a permit")
                 else:
-                    matches = re.search(r"(\d+) hours", message.content)
                     match1 = re.search(r"(\d+) hour", message.content)
                     match0 = re.search(r"(\d+) minute", message.content)
-                    if matches:
+                    if match1:
                         hours = int(match1.group(1))
-                        farm_print(f"Autofarm - Waiting for {hours} hours to work again")
-                        await asyncio.sleep(hours * 3600 + 5)
-                    elif match1:
-                        hours = int(match1.group(1))
-                        farm_print(f"Autofarm - Waiting for {hours} hour to work again")
+                        farm_print(f"Autofarm - Waiting for {hours} hour(s) to work again")
                         await asyncio.sleep(hours * 3600 + 5)
                     elif match0:
                         minutes = int(match0.group(1))
@@ -776,30 +820,39 @@ class Main(discord.Client):
                     else:
                         farm_print("Autofarm - Processing...")
                 if message is not None:
-                    reply = await self.wait_for("message", check=lambda m: m.author.id == 646937666251915264)
+                    reply = await self.wait_for(
+                        "message",
+                        check=lambda m: m.author.id == 646937666251915264
+                    )
                     if reply:
                         await self.autofindresource()
                         await reply.components[0].children[1].click()
                         farm_print("Autofarm - Worked successfully!")
                         await asyncio.sleep(12 * 3600 + 5)
 
-    # find best node
+    # find best resource node
     async def autofindresource(self):
         channel = self.get_channel(resourcechannel)
         async with channel.typing():
             await asyncio.sleep(random.uniform(0.2, 1))
         await channel.send("kn")
-        reply = await client.wait_for("message", check=lambda m: m.author.id == 646937666251915264)
-        a = re.compile(r"`(\w+)` · \*\*(\d+)%\*\* tax · \*\*(\d+)(%\*\* power · \*\*(\d+)|\*)", re.MULTILINE).findall(reply.embeds[0].to_dict()["description"].replace(",", ""))
-        top = 0
+        reply = await client.wait_for(
+            "message",
+            check=lambda m: m.author.id == 646937666251915264
+        )
+        a = re.compile(
+            r"`(\w+)` · \*\*(\d+)%\*\* tax · \*\*(\d+)(%\*\* power · \*\*(\d+)|\*)",
+            re.MULTILINE
+        ).findall(reply.embeds[0].to_dict()["description"].replace(",", ""))
+        top      = 0
         material = None
         for interest in a:
             if not interest.count("") == 1:
                 if int(interest[4]) > top:
-                    top = int(interest[4])
+                    top      = int(interest[4])
                     material = interest[0]
             else:
-                top = int(interest[2])
+                top      = int(interest[2])
                 material = interest[0]
         async with channel.typing():
             await asyncio.sleep(random.uniform(0.9, 1.7))
@@ -807,8 +860,8 @@ class Main(discord.Client):
 
     # run auto drop
     async def autodrop(self):
-        channel = self.get_channel(autodropchannel)
-        first_run = True
+        channel    = self.get_channel(autodropchannel)
+        first_run  = True
         while True:
             try:
                 if not first_run:
@@ -823,7 +876,7 @@ class Main(discord.Client):
                     self.drop_timer = drop_wait
                     remaining = wait_secs + random.randint(5, 15)
                     while remaining > 0:
-                        chunk = min(remaining, 30)
+                        chunk     = min(remaining, 30)
                         await asyncio.sleep(chunk)
                         remaining -= chunk
 
@@ -832,7 +885,7 @@ class Main(discord.Client):
                     await asyncio.sleep(random.uniform(0.2, 1))
                 await channel.send("kd")
                 self.drop_timer = 1800
-                autodrop_print(f"Cards dropped successfully")
+                autodrop_print("Cards dropped successfully")
                 console.set_state("IDLE")
 
             except asyncio.CancelledError:
@@ -843,12 +896,22 @@ class Main(discord.Client):
                 first_run = True
                 await asyncio.sleep(30)
 
-    # get drop cd
+    # get cooldown status
     async def check_kcd(self, channel):
         async with channel.typing():
             await asyncio.sleep(random.uniform(0.2, 0.6))
 
-        listener_task = asyncio.get_event_loop().create_task(self.wait_for("message", timeout=10.0, check=lambda m: (m.author.id == 646937666251915264 and m.channel.id == channel.id and len(m.embeds) > 0)))
+        listener_task = asyncio.get_event_loop().create_task(
+            self.wait_for(
+                "message",
+                timeout=10.0,
+                check=lambda m: (
+                    m.author.id == 646937666251915264
+                    and m.channel.id == channel.id
+                    and len(m.embeds) > 0
+                )
+            )
+        )
         await channel.send("kcd")
 
         try:
@@ -857,10 +920,10 @@ class Main(discord.Client):
             kcd_print(f"{C_AMBER}No response from Karuta — assuming both ready{R}")
             return 0, 0
 
-        desc = resp.embeds[0].description or ""
+        desc        = resp.embeds[0].description or ""
         fields_text = " ".join(f.value for f in (resp.embeds[0].fields or []))
-        full_text = desc + " " + fields_text
-        clean_text = re.sub(r"[*_`~]", "", full_text)
+        full_text   = desc + " " + fields_text
+        clean_text  = re.sub(r"[*_`~]", "", full_text)
 
         def parse_cd(text, label):
             if re.search(rf"{label} is currently available", text, re.IGNORECASE):
@@ -871,7 +934,9 @@ class Main(discord.Client):
             secs = re.search(rf"{label}.*?available in (\d+) second", text, re.IGNORECASE)
             if secs:
                 return int(secs.group(1))
-            fallback = re.search(rf"{label}.*?(\d+)\s*(?:minute|min|second|sec)", text, re.IGNORECASE)
+            fallback = re.search(
+                rf"{label}.*?(\d+)\s*(?:minute|min|second|sec)", text, re.IGNORECASE
+            )
             if fallback:
                 val = int(fallback.group(1))
                 if re.search(rf"{label}.*?{val}\s*(?:minute|min)", text, re.IGNORECASE):
@@ -886,16 +951,15 @@ class Main(discord.Client):
         kcd_print(f"Grab: {_grab_s}  {C_DIM}│{R}  Drop: {_drop_s}")
         return grab_secs, drop_secs
 
-    # grab finish
+    # post-click
     async def afterclick(self):
-        dprint(f"Clicked on Button")
+        dprint("Clicked on Button")
         self.grab_timer += 60
-        self.missed += 1
-        console.missed = self.missed
+        self.missed     += 1
+        console.missed   = self.missed
 
 
 # module-level helpers
-
 
 def fix_ocr_spaces(text):
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
@@ -914,33 +978,30 @@ def isbutton(data):
 
 
 # print wrappers
-def tprint(message):       console.log(message)
+def tprint(message):        console.log(message)
 def dprint(message):
-    if debug: console.log_debug(message)
+    if debug:   console.log_debug(message)
 def vprint(message):
     if verbose: console.log_info(message)
 def drop_print(message):
-    if log_drops: console.log_grab(message)
+    if log_drops:    console.log_grab(message)
 def grab_print(message):
-    if log_grabs: console.log_collect(message)
+    if log_grabs:    console.log_collect(message)
 def wl_print(message):
     if log_wishlist: console.log_wl(message)
 def autodrop_print(message):
     if log_autodrop: console.log_drop(message)
 def kcd_print(message):
-    if log_kcd: console.log_kcd(message)
+    if log_kcd:      console.log_kcd(message)
 def farm_print(message):
     if log_autofarm: console.log_farm(message)
 
 
-# token auth
-if token == "":
-    inp = input(f"{C_CORAL}No token found. Would you like to scan for tokens on this PC? (y/n): {R}")
-    if inp == "y":
-        token = api.get_tokens(False)
-        input("Press any key to exit...")
+# entry point
+if not token:
+    tprint(f"{C_CORAL}No token set in config.json — exiting{R}")
+    sys.exit(1)
 
-# start run
 client = Main(guild_subscriptions=False)
 tprint(f"{C_MINT}Starting bot...{R}")
 try:
@@ -948,4 +1009,4 @@ try:
 except KeyboardInterrupt:
     tprint(f"{C_CORAL}Ctrl-C detected — exiting{R}")
     client.close()
-    exit()
+    sys.exit(0)
