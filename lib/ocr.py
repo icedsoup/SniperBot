@@ -4,9 +4,10 @@ except ImportError:
     import Image
 import cv2
 
-# check size
 def filelength(filepath):
     im = cv2.imread(filepath)
+    if im is None:
+        return 0
     return im.shape[1]
 
 # slice whole card

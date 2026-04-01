@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import random
 import re
@@ -80,6 +81,21 @@ if autodrop:
 
 # start console
 console = KarutaConsole(version=v, use_timestamp=timestamp)
+
+class _ConsoleLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            console.log(self.format(record))
+        except Exception:
+            pass
+
+_discord_log_handler = _ConsoleLogHandler()
+_discord_log_handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+
+_discord_logger = logging.getLogger("discord")
+_discord_logger.handlers.clear()
+_discord_logger.addHandler(_discord_log_handler)
+_discord_logger.setLevel(logging.WARNING)
 
 # consonant set for OCR v/u heuristic
 _CONSONANTS = frozenset('bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ')
@@ -200,13 +216,13 @@ class Main(discord.Client):
             t.add_done_callback(_done)
             return t
 
-        spawn(self.cooldown(),                          "cooldown")
-        spawn(self.filewatch("keywords\\animes.txt"),  "filewatch:animes")
-        spawn(self.filewatch("keywords\\characters.txt"), "filewatch:characters")
-        spawn(self.filewatch("keywords\\aniblacklist.txt"), "filewatch:aniblacklist")
-        spawn(self.configwatch("config.json"),          "configwatch")
-        spawn(self.filewatch("keywords\\charblacklist.txt"), "filewatch:charblacklist")
-        spawn(console.animate(),                        "console:animate")
+        spawn(self.cooldown(),                             "cooldown")
+        spawn(self.filewatch("keywords\\animes.txt"),      "filewatch:animes")
+        spawn(self.filewatch("keywords\\characters.txt"),  "filewatch:characters")
+        spawn(self.filewatch("keywords\\aniblacklist.txt"),"filewatch:aniblacklist")
+        spawn(self.configwatch("config.json"),             "configwatch")
+        spawn(self.filewatch("keywords\\charblacklist.txt"),"filewatch:charblacklist")
+        spawn(console.animate(),                           "console:animate")
         if autodrop:
             spawn(self.autodrop(), "autodrop")
         if autofarm:
@@ -272,8 +288,16 @@ class Main(discord.Client):
                 with open("temp\\card.webp", "wb") as file:
                     file.write(requests.get(message.attachments[0].url).content)
 
+                img_len = filelength("temp\\card.webp")
+                if img_len == 0:
+                    dprint("Could not read card.webp — skipping drop")
+                    if edit_task and not edit_task.done():
+                        edit_task.cancel()
+                    console.set_state("IDLE")
+                    return
+
                 # split cards
-                if filelength("temp\\card.webp") == 836:
+                if img_len == 836:
                     cardnum = 3
                     for a in range(3):
                         await get_card(f"{path_to_ocr}\\card{a + 1}.png", "temp\\card.webp", a)
