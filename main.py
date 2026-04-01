@@ -25,7 +25,7 @@ from console import (KarutaConsole,
 init(convert=True)
 match = "(is dropping [3-4] cards!)|(I'm dropping [3-4] cards since this server is currently active!)"
 path_to_ocr = "temp"
-v = "v2.3.2"
+v = "v2.3.3"
 
 # CardCompanion UID
 CARDCOMPANION_ID = 1380936713639166082
@@ -80,6 +80,9 @@ if autodrop:
 
 # start console
 console = KarutaConsole(version=v, use_timestamp=timestamp)
+
+# consonant set for OCR v/u heuristic
+_CONSONANTS = frozenset('bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ')
 
 
 # helpers
@@ -476,7 +479,7 @@ class Main(discord.Client):
                 rf"<@{str(self.user.id)}>.*took the \*\*(.*)\*\* card `(.*)`!",
                 message.content
             )
-            self.grab_timer = max(self.grab_timer + 540, 600)
+            self.grab_timer = 600
             self.missed    -= 1
             self.collected += 1
             console.collected = self.collected
@@ -649,9 +652,8 @@ class Main(discord.Client):
         except discord.errors.Forbidden as oopsie:
             dprint(f"React failed: {oopsie}")
             return
-        self.grab_timer += 60
-        self.missed     += 1
-        console.missed   = self.missed
+        self.missed  += 1
+        console.missed = self.missed
         dprint(f"Reacted with {emoji} successfully")
 
     # keyword priority helpers
@@ -686,6 +688,23 @@ class Main(discord.Client):
                     return idx
         return len(parsed_chars)
 
+    @staticmethod
+    def _fix_vu_confusion(text: str) -> str:
+        """
+        EasyOCR sometimes reads 'v' as 'u' for the Karuta card font.
+        """
+        if 'u' not in text and 'U' not in text:
+            return text
+        chars = list(text)
+        for i, ch in enumerate(chars):
+            if ch not in ('u', 'U'):
+                continue
+            prev_ok = i > 0 and chars[i - 1] in _CONSONANTS
+            next_ok = i < len(chars) - 1 and chars[i + 1] in _CONSONANTS
+            if prev_ok and next_ok:
+                chars[i] = 'v' if ch == 'u' else 'V'
+        return ''.join(chars)
+
     # clean up OCR text
     @staticmethod
     def normalize_ocr_text(text):
@@ -713,7 +732,9 @@ class Main(discord.Client):
         text = re.sub(r"\s+([:;,\.\?\!\)\]])", r"\1", text)
         text = re.sub(r"([\(\[])\s+", r"\1", text)
         text = re.sub(r"\s{2,}", " ", text)
-        return text.strip()
+        text = text.strip()
+        text = Main._fix_vu_confusion(text)
+        return text
 
     # run OCR in thread
     async def ocr_best(self, image_path):
@@ -954,9 +975,8 @@ class Main(discord.Client):
     # post-click
     async def afterclick(self):
         dprint("Clicked on Button")
-        self.grab_timer += 60
-        self.missed     += 1
-        console.missed   = self.missed
+        self.missed  += 1
+        console.missed = self.missed
 
 
 # module-level helpers
