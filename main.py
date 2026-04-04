@@ -31,6 +31,9 @@ v = "v2.3.3"
 # CardCompanion UID
 CARDCOMPANION_ID = 1380936713639166082
 
+# grab attempt cd
+GRAB_ATTEMPT_COOLDOWN = 60
+
 # load config
 with open("config.json") as f:
     config = json.load(f)
@@ -104,12 +107,6 @@ _CONSONANTS = frozenset('bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ')
 # helpers
 
 def _parse_char_line(line: str):
-    """
-    Parse a single line from characters.txt.
-    Formats:
-        "Gojo Satoru"                  -> ('Gojo Satoru', None)
-        "Gojo Satoru, Jujutsu Kaisen"  -> ('Gojo Satoru', 'Jujutsu Kaisen')
-    """
     line = line.strip()
     if not line:
         return None
@@ -127,7 +124,6 @@ class Main(discord.Client):
         self.charblacklist = None
         self.aniblacklist  = None
         self.animes        = None
-        # list of (char_name: str, anime: str | None)
         self.chars: list[tuple[str, str | None]] = []
         self.messageid    = None
         self.current_card = None
@@ -153,7 +149,6 @@ class Main(discord.Client):
         if sys.gettrace() is None:
             console.print_banner()
 
-        # build startup box
         _sections = []
         _user_str = (
             f"{C_MINT}{self.user.name}#{self.user.discriminator}{R}"
@@ -197,7 +192,6 @@ class Main(discord.Client):
 
         await self.update_files()
 
-        # subscribe to guilds
         for guild in guilds:
             try:
                 await self.get_guild(guild).subscribe(
@@ -206,7 +200,6 @@ class Main(discord.Client):
             except AttributeError:
                 tprint(f"{C_CORAL}Error subscribing to a server?{R}")
 
-        # start tasks
         def spawn(coro, name="task"):
             t = asyncio.get_event_loop().create_task(coro)
             def _done(fut, _name=name):
@@ -216,13 +209,13 @@ class Main(discord.Client):
             t.add_done_callback(_done)
             return t
 
-        spawn(self.cooldown(),                             "cooldown")
-        spawn(self.filewatch("keywords\\animes.txt"),      "filewatch:animes")
-        spawn(self.filewatch("keywords\\characters.txt"),  "filewatch:characters")
-        spawn(self.filewatch("keywords\\aniblacklist.txt"),"filewatch:aniblacklist")
-        spawn(self.configwatch("config.json"),             "configwatch")
+        spawn(self.cooldown(),                              "cooldown")
+        spawn(self.filewatch("keywords\\animes.txt"),       "filewatch:animes")
+        spawn(self.filewatch("keywords\\characters.txt"),   "filewatch:characters")
+        spawn(self.filewatch("keywords\\aniblacklist.txt"), "filewatch:aniblacklist")
+        spawn(self.configwatch("config.json"),              "configwatch")
         spawn(self.filewatch("keywords\\charblacklist.txt"),"filewatch:charblacklist")
-        spawn(console.animate(),                           "console:animate")
+        spawn(console.animate(),                            "console:animate")
         if autodrop:
             spawn(self.autodrop(), "autodrop")
         if autofarm:
@@ -261,7 +254,7 @@ class Main(discord.Client):
         if re.search("A wishlisted card is dropping!", message.content):
             dprint("Wishlisted card detected")
 
-        # drop match
+        #  drop event
         if self.grab_timer == 0 and re.search(match, message.content):
             BUTTON_WINDOW = 25.0
             ocr_start = asyncio.get_running_loop().time()
@@ -279,9 +272,11 @@ class Main(discord.Client):
             grabbed  = False
 
             async with self.drop_lock:
+                # Re-check inside lock
                 if self.grab_timer != 0:
                     if edit_task and not edit_task.done():
                         edit_task.cancel()
+                    console.set_state("IDLE")
                     return
 
                 # save image
@@ -489,11 +484,11 @@ class Main(discord.Client):
 
             console.set_state("IDLE")
 
-            # fallback to wishlist
+            # wishlist fallback
             if grab_idx == -1 and wishlist_lookup_enabled and cid in wishlist_watching_channels:
                 await self.do_wishlist_lookup(message, charlist, anilist, cid, mcheck, emoji, buttons_ref)
 
-        # confirm grab
+        #  confirm grab 
         elif re.search(
             rf"<@{str(self.user.id)}> took the \*\*.*\*\* card `.*`!"
             rf"|<@{str(self.user.id)}> fought off .* and took the \*\*.*\*\* card `.*`!",
@@ -517,7 +512,7 @@ class Main(discord.Client):
                     else:
                         ff.write(f"Obtained: {a.group(1)}{reason_str} - {self.url}\n")
 
-        # bless checks
+        #  bless checks 
         elif message.content.startswith(f"<@{str(self.user.id)}>, your **Evasion"):
             dprint("Evasion blessing detected — resetting grab cd")
             self.grab_timer = 0
@@ -525,8 +520,13 @@ class Main(discord.Client):
             dprint("Generosity blessing detected — resetting drop cd")
             self.drop_timer = 0
 
-    # wishlist fallback
+    #  wishlist fallback 
+
     async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, emoji, buttons_ref):
+        if self.grab_timer != 0:
+            wl_print(f"{C_AMBER}Grab on cooldown ({self.grab_timer}s) — skipping wishlist lookup{R}")
+            return
+
         channel = self.get_channel(autodropchannel)
         if channel is None:
             channel = self.get_channel(message.channel.id)
@@ -536,9 +536,14 @@ class Main(discord.Client):
         wl_print(f"{C_TEAL}[{channel.name}]{R} No keyword match — checking wishlists...")
 
         for i in range(len(charlist)):
+
+            query_name   = self.normalize_for_query(fix_ocr_spaces(charlist[i].strip()))
+            query_series = self.normalize_for_query(fix_ocr_spaces(anilist[i].strip()))
+
             name   = self.normalize_ocr_text(fix_ocr_spaces(charlist[i].strip()))
             series = self.normalize_ocr_text(fix_ocr_spaces(anilist[i].strip()))
-            if not name:
+
+            if not query_name:
                 continue
 
             if api.isSomething(name, self.charblacklist, blaccuracy):
@@ -548,14 +553,18 @@ class Main(discord.Client):
                 wl_print(f"{C_AMBER}Skipping blacklisted anime:{R} {series}")
                 continue
 
-            query = f"clu {series} {name}" if series else f"clu {name}"
+            query = f"clu {query_series} {query_name}" if query_series else f"clu {query_name}"
 
             async with self.lookup_lock:
                 now       = asyncio.get_running_loop().time()
                 wait_time = self.lookup_next_at - now
                 if wait_time > 0:
-                    wl_print(f"{C_AMBER}Rate limit — waiting {wait_time:.1f}s before next lookup{R}")
+                    wl_print(f"{C_AMBER}Rate limit — waiting {wait_time:.1f}s{R}")
                     await asyncio.sleep(wait_time)
+
+                if self.grab_timer != 0:
+                    wl_print(f"{C_AMBER}Grab on cooldown — aborting wishlist lookup{R}")
+                    return
 
                 async with channel.typing():
                     await asyncio.sleep(random.uniform(0.2, 0.5))
@@ -573,11 +582,11 @@ class Main(discord.Client):
                         )
                     )
                 except asyncio.TimeoutError:
-                    wl_print(f"{C_AMBER}Timeout waiting for clu response for:{R} {name}")
+                    wl_print(f"{C_AMBER}Timeout waiting for clu response for:{R} {query_name}")
                     continue
 
                 if not resp.embeds:
-                    wl_print(f"{C_AMBER}clu couldn't find{R} '{name}' {C_DIM}(OCR mismatch){R} — skipping")
+                    wl_print(f"{C_AMBER}clu couldn't find{R} '{query_name}' {C_DIM}(OCR mismatch){R} — skipping")
                     continue
 
             wl = -1
@@ -612,10 +621,10 @@ class Main(discord.Client):
                         wl = int(re.sub(r"[^0-9]", "", m.group(1)))
 
             except Exception as e:
-                dprint(f"WL parse error for {name}: {e}")
+                dprint(f"WL parse error for {query_name}: {e}")
 
             wl_print(
-                f"{C_WHITE}{name}{R} {C_DIM}({series}){R}  {C_DIM}▸{R}  "
+                f"{C_WHITE}{query_name}{R} {C_DIM}({query_series}){R}  {C_DIM}▸{R}  "
                 f"{C_GOLD}{wl if wl >= 0 else '?'} wishlists{R}"
             )
 
@@ -631,6 +640,11 @@ class Main(discord.Client):
                 f"Best wishlist: {C_CORAL}{best_wl}{R} — "
                 f"below threshold of {C_AMBER}{min_wishlist}{R}, skipping"
             )
+            return
+
+        # final guard before attempting the grab
+        if self.grab_timer != 0:
+            wl_print(f"{C_AMBER}Grab on cooldown — skipping wishlist grab{R}")
             return
 
         wl_print(f"Grabbing {C_MINT}{charlist[best_idx]}{R} with {C_GOLD}{best_wl}{R} wishlists")
@@ -667,7 +681,8 @@ class Main(discord.Client):
         else:
             await self.react_add(message, emoji(best_idx))
 
-    # add reaction
+    #  add reaction
+
     async def react_add(self, message, emoji):
         try:
             dprint("Attempting to react")
@@ -676,15 +691,16 @@ class Main(discord.Client):
         except discord.errors.Forbidden as oopsie:
             dprint(f"React failed: {oopsie}")
             return
-        self.missed  += 1
-        console.missed = self.missed
-        dprint(f"Reacted with {emoji} successfully")
+        self.grab_timer    = GRAB_ATTEMPT_COOLDOWN
+        console.grab_timer = self.grab_timer
+        self.missed       += 1
+        console.missed     = self.missed
+        dprint(f"Reacted with {emoji} — grab cd set to {GRAB_ATTEMPT_COOLDOWN}s")
 
-    # keyword priority helpers
+    #  keyword priority helpers 
 
     @staticmethod
     def keyword_match_priority(text, keyword_list, threshold):
-        """Priority index for a flat keyword list (animes, blacklists)."""
         text_l = text.lower().strip()
         for idx, kw in enumerate(keyword_list):
             kw_l = kw.lower().strip()
@@ -695,11 +711,6 @@ class Main(discord.Client):
     @staticmethod
     def keyword_match_priority_char(char_text: str, anime_text: str,
                                     parsed_chars: list, threshold: float) -> int:
-        """
-        Priority index for a parsed chars list of (name, optional_anime) tuples.
-        Lower index = higher priority (appears earlier in the keyword file).
-        When an anime qualifier is present it must also match.
-        """
         char_l  = char_text.lower().strip()
         anime_l = anime_text.lower().strip()
         for idx, (char_name, char_anime) in enumerate(parsed_chars):
@@ -715,7 +726,9 @@ class Main(discord.Client):
     @staticmethod
     def _fix_vu_confusion(text: str) -> str:
         """
-        EasyOCR sometimes reads 'v' as 'u' for the Karuta card font.
+        EasyOCR sometimes reads 'v' as 'u'. Convert 'u' → 'v' only when it is
+        flanked by consonants on both sides (strong indicator it is actually a 'v').
+        Used for keyword matching only — NOT for clu query strings.
         """
         if 'u' not in text and 'U' not in text:
             return text
@@ -729,9 +742,11 @@ class Main(discord.Client):
                 chars[i] = 'v' if ch == 'u' else 'V'
         return ''.join(chars)
 
-    # clean up OCR text
+    #  OCR text normalisers 
+
     @staticmethod
-    def normalize_ocr_text(text):
+    def _base_normalize(text: str) -> str:
+        """Common normalisation steps shared by both methods below."""
         text = unicodedata.normalize("NFKC", text or "")
         text = text.replace("\r", " ").replace("\n", " ")
         text = re.sub(r"\s+", " ", text).strip()
@@ -756,11 +771,25 @@ class Main(discord.Client):
         text = re.sub(r"\s+([:;,\.\?\!\)\]])", r"\1", text)
         text = re.sub(r"([\(\[])\s+", r"\1", text)
         text = re.sub(r"\s{2,}", " ", text)
-        text = text.strip()
+        return text.strip()
+
+    @staticmethod
+    def normalize_ocr_text(text: str) -> str:
+        """Full normalisation including v/u fix — use for keyword matching."""
+        text = Main._base_normalize(text)
         text = Main._fix_vu_confusion(text)
         return text
 
-    # run OCR in thread
+    @staticmethod
+    def normalize_for_query(text: str) -> str:
+        """
+        Normalisation WITHOUT v/u fix — use when building clu query strings so
+        that names like 'Sakura' are not mangled to 'Sakvra' by the heuristic.
+        """
+        return Main._base_normalize(text)
+
+    #  OCR runner
+
     async def ocr_best(self, image_path):
         def _run():
             text = ocr_image(image_path)
@@ -768,7 +797,8 @@ class Main(discord.Client):
             return text
         return await asyncio.to_thread(_run)
 
-    # timer loop
+    #  timer loop
+
     async def cooldown(self):
         while True:
             await asyncio.sleep(1)
@@ -793,7 +823,8 @@ class Main(discord.Client):
                     f"{grab_str} - {drop_str}"
                 )
 
-    # reload keyword files
+    #  keyword file reload
+
     async def update_files(self):
         with open("keywords\\characters.txt", encoding="utf-8") as ff:
             raw_chars = ff.read().splitlines()
@@ -817,7 +848,6 @@ class Main(discord.Client):
             f"{C_DIM}│{R}  {C_CORAL}{len(self.charblacklist)}{R} blacklisted"
         )
 
-    # watch text files
     async def filewatch(self, path):
         bruh = api.FileWatch(path)
         dprint(f"Filewatch activated for {path}")
@@ -826,7 +856,6 @@ class Main(discord.Client):
             if bruh.watch():
                 await self.update_files()
 
-    # watch config.json
     async def configwatch(self, path):
         bruh = api.FileWatch(path)
         while True:
@@ -835,12 +864,13 @@ class Main(discord.Client):
                 with open("config.json") as ff:
                     cfg = json.load(ff)
                 global accuracy, wishlist_lookup_enabled, wishlist_watching_channels
-                accuracy                  = float(cfg["accuracy"])
-                wishlist_lookup_enabled   = cfg.get("wishlist_lookup", True)
+                accuracy                   = float(cfg["accuracy"])
+                wishlist_lookup_enabled    = cfg.get("wishlist_lookup", True)
                 wishlist_watching_channels = cfg.get("wishlist_watching_channels", channels)
                 dprint("Config reloaded")
 
-    # auto farm
+    #  autofarm
+
     async def autofarm(self):
         channel = self.get_channel(resourcechannel)
         while True:
@@ -875,7 +905,6 @@ class Main(discord.Client):
                         farm_print("Autofarm - Worked successfully!")
                         await asyncio.sleep(12 * 3600 + 5)
 
-    # find best resource node
     async def autofindresource(self):
         channel = self.get_channel(resourcechannel)
         async with channel.typing():
@@ -903,10 +932,11 @@ class Main(discord.Client):
             await asyncio.sleep(random.uniform(0.9, 1.7))
         await channel.send(f"kjn abcde {material}")
 
-    # run auto drop
+    #  autodrop
+
     async def autodrop(self):
-        channel    = self.get_channel(autodropchannel)
-        first_run  = True
+        channel   = self.get_channel(autodropchannel)
+        first_run = True
         while True:
             try:
                 if not first_run:
@@ -941,7 +971,6 @@ class Main(discord.Client):
                 first_run = True
                 await asyncio.sleep(30)
 
-    # get cooldown status
     async def check_kcd(self, channel):
         async with channel.typing():
             await asyncio.sleep(random.uniform(0.2, 0.6))
@@ -996,14 +1025,18 @@ class Main(discord.Client):
         kcd_print(f"Grab: {_grab_s}  {C_DIM}│{R}  Drop: {_drop_s}")
         return grab_secs, drop_secs
 
-    # post-click
+    #  post-click
+
     async def afterclick(self):
-        dprint("Clicked on Button")
-        self.missed  += 1
-        console.missed = self.missed
+        """Called after every button click attempt. Sets 1-min grab cooldown."""
+        dprint("Clicked on button — grab cd set to {GRAB_ATTEMPT_COOLDOWN}s")
+        self.grab_timer    = GRAB_ATTEMPT_COOLDOWN
+        console.grab_timer = self.grab_timer
+        self.missed       += 1
+        console.missed     = self.missed
 
 
-# module-level helpers
+#  module helpers
 
 def fix_ocr_spaces(text):
     text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
@@ -1022,6 +1055,7 @@ def isbutton(data):
 
 
 # print wrappers
+
 def tprint(message):        console.log(message)
 def dprint(message):
     if debug:   console.log_debug(message)
@@ -1042,6 +1076,7 @@ def farm_print(message):
 
 
 # entry point
+
 if not token:
     tprint(f"{C_CORAL}No token set in config.json — exiting{R}")
     sys.exit(1)
