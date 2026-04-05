@@ -83,15 +83,23 @@ class KarutaConsole:
         self._tick:         int  = 0
         self._status_drawn: bool = False
         self._running:      bool = False
+        self._active:       bool = False
+        self._own_write:    bool = False
 
-    # prep timestamp
+    # activation
+
+    def start(self):
+        self._active = True
+        self._draw_status()   # show immediately
+
+    # helpers
+
     def _ts(self) -> str:
         if self.use_timestamp:
             t = datetime.now().strftime('%H:%M:%S')
             return f"{C_GRAY}{t}{R}  "
         return ""
 
-    # draw cd bar
     def _cd_bar(self, secs: int, cap: int, width: int = 10) -> str:
         if secs <= 0:
             return f"{C_MINT}READY     {R}"
@@ -102,7 +110,6 @@ class KarutaConsole:
         label  = f"{C_DIM}{m}m{s:02d}s{R}" if m else f"{C_DIM}{s:3d}s {R}"
         return f"{bar} {label}"
 
-    # build status str
     def _build_status(self) -> str:
         t   = self._tick
         sep = f" {C_GRAY}│{R} "
@@ -136,38 +143,42 @@ class KarutaConsole:
 
         return line
 
-    # wipe current line
+    # IO
+
     def _erase_status(self):
         if self._status_drawn:
+            self._own_write = True
             sys.stdout.write('\r\x1b[2K')
             sys.stdout.flush()
+            self._own_write = False
             self._status_drawn = False
 
-    # render status
     def _draw_status(self):
+        if not self._active:
+            return
+        self._own_write = True
         sys.stdout.write('\r\x1b[2K' + self._build_status())
         sys.stdout.flush()
+        self._own_write = False
         self._status_drawn = True
 
-    # print helper
+    # public print helpers
+
     def _emit(self, icon: str, msg: str):
         self._erase_status()
         print(f"{self._ts()}{icon}  {msg}{R}")
         self._draw_status()
 
-    # log generic
     def log(self, msg: str):
         self._erase_status()
         print(f"{self._ts()}{msg}{R}")
         self._draw_status()
 
-    # log bare
     def log_raw(self, msg: str):
         self._erase_status()
         print(msg)
         self._draw_status()
 
-    # log types
     def log_grab(self, msg: str):    self._emit(f"{C_TEAL}[GRAB]{R}", msg)
     def log_collect(self, msg: str): self._emit(f"{C_MINT}[GOT ]{R}", msg)
     def log_drop(self, msg: str):    self._emit(f"{C_PURPLE}[DROP]{R}", msg)
@@ -178,7 +189,8 @@ class KarutaConsole:
     def log_info(self, msg: str):    self._emit(f"{C_BLUE}[INFO]{R}", msg)
     def log_farm(self, msg: str):    self._emit(f"{C_PURPLE}[FARM]{R}", msg)
 
-    # splash screen
+    # startup display
+
     def print_banner(self):
         w = _term_w()
         self.log_raw("")
@@ -186,7 +198,6 @@ class KarutaConsole:
             self.log_raw(C_TEAL + line.center(w) + R)
         self.log_raw("")
 
-    # render info box
     def print_startup_box(self, sections: list):
         inner = min(_term_w() - 6, 68)
 
@@ -209,11 +220,11 @@ class KarutaConsole:
         self.log_raw(_rule("╰", "╯"))
         self.log_raw("")
 
-    # swap state
+    # state / animation
+
     def set_state(self, state: str):
         self.state = state
 
-    # clock loop
     async def animate(self):
         self._running = True
         while self._running:
@@ -222,7 +233,6 @@ class KarutaConsole:
             if self._status_drawn:
                 self._draw_status()
 
-    # stop clock
     def stop(self):
         self._running = False
         self._erase_status()

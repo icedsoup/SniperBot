@@ -1,4 +1,5 @@
 import asyncio
+import io as _io
 import json
 import logging
 import os
@@ -82,8 +83,52 @@ if autodrop:
     randmin         = int(config["randmin"])
     randmax         = int(config["randmax"])
 
+# stdout/stderr shim
+
+class _PatchedWriter:
+    """Thin shim that erases the status bar before any unexpected write."""
+
+    __slots__ = ('_o', '_c')
+
+    def __init__(self, orig, con):
+        self._o = orig
+        self._c = con
+
+    def write(self, s):
+        # Skip the erase when the console itself is writing (prevents recursion)
+        if not self._c._own_write:
+            self._c._erase_status()
+        return self._o.write(s)
+
+    def flush(self):
+        return self._o.flush()
+
+    def isatty(self):
+        try:
+            return self._o.isatty()
+        except Exception:
+            return False
+
+    def fileno(self):
+        try:
+            return self._o.fileno()
+        except Exception:
+            raise _io.UnsupportedOperation("fileno")
+
+    def __getattr__(self, name):
+        return getattr(self._o, name)
+
+
 # start console
 console = KarutaConsole(version=v, use_timestamp=timestamp)
+
+_orig_stdout = sys.stdout
+_orig_stderr = sys.stderr
+sys.stdout = _PatchedWriter(_orig_stdout, console)
+sys.stderr = _PatchedWriter(_orig_stderr, console)
+
+
+# ── logging setup ─────────────────────────────────────────────────────────────
 
 class _ConsoleLogHandler(logging.Handler):
     def emit(self, record):
@@ -99,8 +144,9 @@ _discord_logger = logging.getLogger("discord")
 _discord_logger.handlers.clear()
 _discord_logger.addHandler(_discord_log_handler)
 _discord_logger.setLevel(logging.WARNING)
+_discord_logger.propagate = False
 
-# consonant set for OCR v/u heuristic
+# consonant set for OCR
 _CONSONANTS = frozenset('bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ')
 
 
@@ -188,6 +234,9 @@ class Main(discord.Client):
             )
 
         console.print_startup_box(_sections)
+
+        console.start()
+
         dprint(f"discord.py-self {discord.__version__}")
 
         await self.update_files()
@@ -524,7 +573,7 @@ class Main(discord.Client):
 
     async def do_wishlist_lookup(self, message, charlist, anilist, cid, mcheck, emoji, buttons_ref):
         if self.grab_timer != 0:
-            wl_print(f"{C_AMBER}Grab on cooldown ({self.grab_timer}s) — skipping wishlist lookup{R}")
+            dprint(f"Grab on cooldown ({self.grab_timer}s) — skipping wishlist lookup")
             return
 
         channel = self.get_channel(autodropchannel)
@@ -533,7 +582,7 @@ class Main(discord.Client):
         best_idx = -1
         best_wl  = -1
 
-        wl_print(f"{C_TEAL}[{channel.name}]{R} No keyword match — checking wishlists...")
+        wl_print(f"{C_TEAL}[{channel.name}]{R} No keyword match — checking wishlists")
 
         for i in range(len(charlist)):
 
@@ -547,10 +596,10 @@ class Main(discord.Client):
                 continue
 
             if api.isSomething(name, self.charblacklist, blaccuracy):
-                wl_print(f"{C_AMBER}Skipping blacklisted character:{R} {name}")
+                dprint(f"WL: skipping blacklisted character: {name}")
                 continue
             if series and api.isSomething(series, self.aniblacklist, blaccuracy):
-                wl_print(f"{C_AMBER}Skipping blacklisted anime:{R} {series}")
+                dprint(f"WL: skipping blacklisted anime: {series}")
                 continue
 
             query = f"clu {query_series} {query_name}" if query_series else f"clu {query_name}"
@@ -563,7 +612,7 @@ class Main(discord.Client):
                     await asyncio.sleep(wait_time)
 
                 if self.grab_timer != 0:
-                    wl_print(f"{C_AMBER}Grab on cooldown — aborting wishlist lookup{R}")
+                    dprint("Grab on cooldown — aborting wishlist lookup")
                     return
 
                 async with channel.typing():
@@ -586,7 +635,7 @@ class Main(discord.Client):
                     continue
 
                 if not resp.embeds:
-                    wl_print(f"{C_AMBER}clu couldn't find{R} '{query_name}' {C_DIM}(OCR mismatch){R} — skipping")
+                    dprint(f"WL: clu no match for '{query_name}' — skipping")
                     continue
 
             wl = -1
@@ -623,9 +672,10 @@ class Main(discord.Client):
             except Exception as e:
                 dprint(f"WL parse error for {query_name}: {e}")
 
-            wl_print(
-                f"{C_WHITE}{query_name}{R} {C_DIM}({query_series}){R}  {C_DIM}▸{R}  "
-                f"{C_GOLD}{wl if wl >= 0 else '?'} wishlists{R}"
+            # Per-card result → verbose only (avoids spam on every drop)
+            vprint(
+                f"WL: {query_name} ({query_series})  →  "
+                f"{wl if wl >= 0 else '?'} wishlists"
             )
 
             if wl > best_wl:
@@ -637,14 +687,14 @@ class Main(discord.Client):
 
         if best_idx == -1 or best_wl < min_wishlist:
             wl_print(
-                f"Best wishlist: {C_CORAL}{best_wl}{R} — "
-                f"below threshold of {C_AMBER}{min_wishlist}{R}, skipping"
+                f"Best wishlist: {C_CORAL}{best_wl if best_wl >= 0 else '?'}{R} — "
+                f"below threshold ({C_AMBER}{min_wishlist}{R}), skipping"
             )
             return
 
         # final guard before attempting the grab
         if self.grab_timer != 0:
-            wl_print(f"{C_AMBER}Grab on cooldown — skipping wishlist grab{R}")
+            dprint("Grab on cooldown — skipping wishlist grab")
             return
 
         wl_print(f"Grabbing {C_MINT}{charlist[best_idx]}{R} with {C_GOLD}{best_wl}{R} wishlists")
@@ -782,10 +832,6 @@ class Main(discord.Client):
 
     @staticmethod
     def normalize_for_query(text: str) -> str:
-        """
-        Normalisation WITHOUT v/u fix — use when building clu query strings so
-        that names like 'Sakura' are not mangled to 'Sakvra' by the heuristic.
-        """
         return Main._base_normalize(text)
 
     #  OCR runner
@@ -1028,7 +1074,6 @@ class Main(discord.Client):
     #  post-click
 
     async def afterclick(self):
-        """Called after every button click attempt. Sets 1-min grab cooldown."""
         dprint("Clicked on button — grab cd set to {GRAB_ATTEMPT_COOLDOWN}s")
         self.grab_timer    = GRAB_ATTEMPT_COOLDOWN
         console.grab_timer = self.grab_timer
